@@ -431,6 +431,10 @@
   .cmpbar-fl{height:100%;border-radius:4px;min-width:2px;transition:width .5s cubic-bezier(.3,1,.4,1)}
   .cmpbar-v{font-size:12px;font-weight:600;color:var(--ink);font-variant-numeric:tabular-nums;min-width:52px;text-align:right}
   .cmpbar.hi .cmpbar-v{color:var(--good-ink);font-weight:700}
+  .cmpbar.fc .cmpbar-fl{background:var(--accent);opacity:.5}
+  .cmpbar.fc .cmpbar-y{color:var(--accent-ink)}
+  .cmpbar.fc .cmpbar-v{color:var(--accent-ink)}
+  .cmpbar.fc-first{margin-top:5px;padding-top:5px;border-top:1px dashed color-mix(in srgb,var(--accent) 55%,transparent)}
   table.cmptbl td.yv{font-variant-numeric:tabular-nums}
   table.cmptbl td.hiy{color:var(--good-ink);font-weight:700}
   table.cmptbl td.tot{font-weight:700;color:var(--ink)}
@@ -464,7 +468,6 @@
       </div>
       <div class="spacer"></div>
       <button class="tbtn" id="refreshBtn" title="รีเฟรช — รีเซ็ตตัวกรองและการแสดงผลทั้งหมด"><span>↻</span><span>รีเฟรช</span></button>
-      <button class="tbtn" id="themeBtn" title="สลับธีมสว่าง/มืด"><span id="themeIcon">◐</span><span id="themeTxt">ธีม</span></button>
     </div>
 
     <div class="filters" id="filters">
@@ -800,6 +803,15 @@ function linForecast(vals){
 }
 function fcVerdict(g){ return g>2?{t:'เติบโต',cls:'overgreen',ar:'▲'} : g<-2?{t:'ลดลง',cls:'crit',ar:'▼'} : {t:'ทรงตัว',cls:'warn',ar:'▬'}; }
 function fcConf(r2){ return r2>=0.8?'สูง' : r2>=0.5?'กลาง' : 'ต่ำ'; }
+// แท่งเทียบรายปีในการ์ด KPI (ต่อท้ายด้วยปีวิเคราะห์แนวโน้มเมื่อเปิดโหมด)
+function cmpBarsHTML(vals){
+  let years=CMP_YEARS.slice(), vs=vals.slice();
+  if(compareForecast){ const f=linForecast(vals); years=years.concat(FC_YEARS); vs=vs.concat(f.proj); }
+  const mx=Math.max(1,...vs), mxv=Math.max(...vs);
+  return years.map((y,i)=>{const isF=compareForecast&&i>=CMP_YEARS.length; const first=isF&&i===CMP_YEARS.length;
+    const bg=isF?'':(';background:var('+YEAR_SV[y]+')');
+    return `<div class="cmpbar${vs[i]===mxv?' hi':''}${isF?' fc':''}${first?' fc-first':''}"><span class="cmpbar-y">${y}${isF?' *':''}</span><div class="cmpbar-tr"><div class="cmpbar-fl" style="width:${100*vs[i]/mx}%${bg}"></div></div><span class="cmpbar-v">${fmt(vs[i])}</span></div>`;}).join('');
+}
 const cmpSortState={};
 // generic per-year comparison table
 function renderCompareTable(tblId, groups, nameLab, opts){
@@ -1128,6 +1140,19 @@ function legendHTML(el2,items){el2.innerHTML=items.map(s=>`<span class="lg"><spa
 
 // line chart (multi-series) with toggleable legend
 const trendHidden=new Set(['ผู้สมัคร']); // hidden by default (very large scale)
+// เส้นโค้งลื่น (Catmull-Rom → Cubic Bézier) ผ่านทุกจุด
+function smoothPath(pts){
+  if(pts.length<2) return pts.length?('M'+pts[0][0].toFixed(1)+' '+pts[0][1].toFixed(1)):'';
+  if(pts.length<3) return pts.map((p,i)=>(i?'L':'M')+p[0].toFixed(1)+' '+p[1].toFixed(1)).join(' ');
+  let d='M'+pts[0][0].toFixed(1)+' '+pts[0][1].toFixed(1);
+  for(let i=0;i<pts.length-1;i++){
+    const p0=pts[i-1]||pts[i], p1=pts[i], p2=pts[i+1], p3=pts[i+2]||pts[i+1];
+    const c1x=p1[0]+(p2[0]-p0[0])/6, c1y=p1[1]+(p2[1]-p0[1])/6;
+    const c2x=p2[0]-(p3[0]-p1[0])/6, c2y=p2[1]-(p3[1]-p1[1])/6;
+    d+=' C'+c1x.toFixed(1)+' '+c1y.toFixed(1)+' '+c2x.toFixed(1)+' '+c2y.toFixed(1)+' '+p2[0].toFixed(1)+' '+p2[1].toFixed(1);
+  }
+  return d;
+}
 function lineChart(box, years, series, hiddenSet, fcFrom){
   const HID=hiddenSet||trendHidden;
   const vis=series.filter(s=>!HID.has(s.lab));
@@ -1152,12 +1177,12 @@ function lineChart(box, years, series, hiddenSet, fcFrom){
   }
   for(let t=0;t<=ticks;t++){const v=nice*t/ticks,y=padT+plotH-plotH*t/ticks;
     svg.appendChild(el('line',{class:'grid',x1:padL,y1:y,x2:W-padR,y2:y}));
-    const tx=el('text',{x:padL-10,y,'text-anchor':'end','dominant-baseline':'middle'});tx.setAttribute('fill','var(--ink-2)');tx.style.fontSize='14px';tx.style.fontWeight='600';tx.textContent=fmt(v);svg.appendChild(tx);}
-  years.forEach((yr,i)=>{const isF=hasFC&&i>=fcFrom;const tx=el('text',{x:xAt(i),y:padT+plotH+28,'text-anchor':'middle'});tx.setAttribute('fill',isF?'var(--accent-ink)':'var(--ink)');tx.style.fontWeight='700';tx.style.fontSize='14px';tx.textContent='ปี '+yr+(isF?' *':'');svg.appendChild(tx);});
+    const tx=el('text',{x:padL-10,y,'text-anchor':'end','dominant-baseline':'middle'});tx.setAttribute('fill','var(--ink-2)');tx.style.fontSize='10px';tx.style.fontWeight='500';tx.textContent=fmt(v);svg.appendChild(tx);}
+  years.forEach((yr,i)=>{const isF=hasFC&&i>=fcFrom;const tx=el('text',{x:xAt(i),y:padT+plotH+28,'text-anchor':'middle'});tx.setAttribute('fill',isF?'var(--accent-ink)':'var(--ink)');tx.style.fontWeight='600';tx.style.fontSize='10.5px';tx.textContent='ปี '+yr+(isF?' *':'');svg.appendChild(tx);});
   svg.appendChild(el('line',{class:'axis',x1:padL,y1:padT+plotH,x2:W-padR,y2:padT+plotH}));
   vis.forEach(s=>{
     const pts=s.values.map((v,i)=>[xAt(i),yAt(v)]);
-    const seg=arr=>arr.map((pt,i)=>(i?'L':'M')+pt[0].toFixed(1)+' '+pt[1].toFixed(1)).join(' ');
+    const seg=arr=>smoothPath(arr);
     if(hasFC){
       svg.appendChild(el('path',{d:seg(pts.slice(0,fcFrom)),fill:'none',stroke:`var(${s.sv})`,'stroke-width':2.5,'stroke-linejoin':'round','stroke-linecap':'round','vector-effect':'non-scaling-stroke'}));
       svg.appendChild(el('path',{d:seg(pts.slice(fcFrom-1)),fill:'none',stroke:`var(${s.sv})`,'stroke-width':2.5,'stroke-dasharray':'7 5','stroke-opacity':0.72,'stroke-linejoin':'round','stroke-linecap':'round','vector-effect':'non-scaling-stroke'}));
@@ -1168,10 +1193,10 @@ function lineChart(box, years, series, hiddenSet, fcFrom){
   vis.forEach(s=>{
     s.values.forEach((v,i)=>{
       const isF=hasFC&&i>=fcFrom;
-      const c=el('circle',{cx:xAt(i),cy:yAt(v),r:isF?4:5,fill:isF?surf:`var(${s.sv})`,stroke:`var(${s.sv})`,'stroke-width':2.5,'vector-effect':'non-scaling-stroke'});
+      const c=el('circle',{cx:xAt(i),cy:yAt(v),r:isF?2.8:3.2,fill:isF?surf:`var(${s.sv})`,stroke:`var(${s.sv})`,'stroke-width':2,'vector-effect':'non-scaling-stroke'});
       c.style.cursor='pointer';
-      c.addEventListener('mousemove',e=>{c.setAttribute('r',7.5);showTip(`<b>ปี ${years[i]}${isF?' (วิเคราะห์แนวโน้ม)':''}</b><div class="tr"><span><span class="tsw" style="background:var(${s.sv})"></span>${s.lab}</span><b>${fmt(v)}</b></div>`,e);});
-      c.addEventListener('mouseleave',()=>{c.setAttribute('r',isF?4:5);hideTip();});
+      c.addEventListener('mousemove',e=>{c.setAttribute('r',5.5);showTip(`<b>ปี ${years[i]}${isF?' (วิเคราะห์แนวโน้ม)':''}</b><div class="tr"><span><span class="tsw" style="background:var(${s.sv})"></span>${s.lab}</span><b>${fmt(v)}</b></div>`,e);});
+      c.addEventListener('mouseleave',()=>{c.setAttribute('r',isF?2.8:3.2);hideTip();});
       svg.appendChild(c);
     });
   });
@@ -1262,8 +1287,8 @@ function renderKPIsCompare(boxes){
     {lab:'รายงานตัว',sv:'--s4',fn:y=>sum(base.filter(r=>r.y===y),'in')}];
   let html='';
   cards.forEach(c=>{
-    const vals=CMP_YEARS.map(c.fn), mx=Math.max(1,...vals), mxi=vals.indexOf(Math.max(...vals));
-    const bars=CMP_YEARS.map((y,i)=>`<div class="cmpbar${i===mxi?' hi':''}"><span class="cmpbar-y">${y}</span><div class="cmpbar-tr"><div class="cmpbar-fl" style="width:${100*vals[i]/mx}%;background:var(${YEAR_SV[y]})"></div></div><span class="cmpbar-v">${fmt(vals[i])}</span></div>`).join('');
+    const vals=CMP_YEARS.map(c.fn);
+    const bars=cmpBarsHTML(vals);
     const a=vals[0],b=vals[vals.length-1];
     html+=`<div class="kpi" style="--kc:var(${c.sv})"><div class="k-lab"><span class="dot" style="background:var(${c.sv})"></span>${c.lab} <span style="margin-left:auto">${deltaArrow(pct(b-a,a))}</span></div><div class="cmpbars">${bars}</div></div>`;
   });
@@ -1784,8 +1809,8 @@ function renderGeoKPIs(){
   if(state.compare){
     let html='';
     METRICS.forEach(m=>{
-      const vals=CMP_YEARS.map(y=>(per[y]&&per[y][m.k])||0), mx=Math.max(1,...vals), mxi=vals.indexOf(Math.max(...vals));
-      const bars=CMP_YEARS.map((y,i)=>`<div class="cmpbar${i===mxi?' hi':''}"><span class="cmpbar-y">${y}</span><div class="cmpbar-tr"><div class="cmpbar-fl" style="width:${100*vals[i]/mx}%;background:var(${YEAR_SV[y]})"></div></div><span class="cmpbar-v">${fmt(vals[i])}</span></div>`).join('');
+      const vals=CMP_YEARS.map(y=>(per[y]&&per[y][m.k])||0);
+      const bars=cmpBarsHTML(vals);
       html+=`<div class="kpi" style="--kc:var(${m.sv})"><div class="k-lab"><span class="dot" style="background:var(${m.sv})"></span>${m.lab} <span style="margin-left:auto">${deltaArrow(pct(vals[vals.length-1]-vals[0],vals[0]))}</span></div><div class="cmpbars">${bars}</div></div>`;
     });
     box.innerHTML=html; return;
@@ -2881,22 +2906,12 @@ function buildTabs(){
 }
 
 // ---- theme toggle
-function initTheme(){
-  const btn=document.getElementById('themeBtn');
-  btn.onclick=()=>{const cur=document.documentElement.getAttribute('data-theme');
-    const dark=cur? cur==='dark' : matchMedia('(prefers-color-scheme:dark)').matches;
-    document.documentElement.setAttribute('data-theme',dark?'light':'dark');renderAll();};
-  matchMedia('(prefers-color-scheme:dark)').addEventListener('change',()=>{if(!document.documentElement.getAttribute('data-theme'))renderAll();});
-}
+function initTheme(){ document.documentElement.setAttribute('data-theme','light'); }
 
 // ---- init
 buildFilters();buildTabs();initTheme();
-// ปุ่มรีเฟรช — รีเซ็ตทุกอย่างกลับค่าเริ่มต้น (คงธีมไว้ถ้าทำได้)
-document.getElementById('refreshBtn').onclick=()=>{
-  try{const t=document.documentElement.getAttribute('data-theme'); if(t)sessionStorage.setItem('tcasTheme',t);}catch(e){}
-  location.reload();
-};
-try{const t=sessionStorage.getItem('tcasTheme'); if(t)document.documentElement.setAttribute('data-theme',t);}catch(e){}
+// ปุ่มรีเฟรช — รีเซ็ตทุกอย่างกลับค่าเริ่มต้น
+document.getElementById('refreshBtn').onclick=()=>{ location.reload(); };
 buildSeg('roundMetric',()=>roundMetricK,k=>{roundMetricK=k;renderRoundChart(filtered());});
 buildSeg('rBarMetric',()=>rBarK,k=>{rBarK=k;renderRoundsTab(filtered());});
 buildSeg('facMetric',()=>facK,k=>{facK=k;renderFacultyTab(filtered());});
